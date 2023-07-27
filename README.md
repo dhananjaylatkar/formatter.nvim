@@ -1,4 +1,7 @@
 # Formatter.nvim
+This fork has patch for range formatting with clang-format. (mhartington#45)
+
+https://github.com/Kypert/formatter.nvim/commit/d7a52769fb1340724df5856c4beb5ece80265a41
 
 <div align="center">
   <h3>A format runner for <code>Neovim</code>.</h3>
@@ -95,6 +98,19 @@ require("formatter").setup {
           stdin = true,
         }
       end
+    },
+
+    c = { 
+      function()
+        return {
+          exe = "clang-format",
+          args = {"--assume-filename", vim.api.nvim_buf_get_name(0), "--lines", "$start_line:$end_line", "-i"},
+          stdin = false,
+          cwd = vim.fn.getcwd(),
+          tempfile_inline = true,
+          range_lines_one_based = true,
+        }
+      end, 
     },
 
     -- Use the special "*" filetype for defining formatter configurations on

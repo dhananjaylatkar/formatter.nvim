@@ -60,6 +60,7 @@ function M.start_task(configs, start_line, end_line, opts)
   local bufname = vim.api.nvim_buf_get_name(bufnr)
   local input = util.get_lines(bufnr, start_line, end_line)
   local inital_changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
+  local initial_tempfile_inline = false
   local output = input
   local error_output = nil
   local name
@@ -136,11 +137,18 @@ function M.start_task(configs, start_line, end_line, opts)
     ignore_exitcode = current.config.ignore_exitcode
     local cmd = { current.config.exe }
     if current.config.args ~= nil then
+      -- Tools might be 1 index based, e.g. clang-format
+      local offset = 0
+      if current.config.range_lines_one_based then
+        offset = 1
+      end
       for _, arg in ipairs(current.config.args) do
+        arg = arg:gsub("$start_line", start_line + offset)
+        arg = arg:gsub("$end_line", end_line)
         table.insert(cmd, arg)
       end
     end
-
+    initial_tempfile_inline = current.config.tempfile_inline
     local on_event = function(...)
       F.on_event(current.config.transform, ...)
     end
@@ -159,7 +167,12 @@ function M.start_task(configs, start_line, end_line, opts)
       vim.fn.chanclose(job_id, "stdin")
     else
       -- TODO: handle null tempfile
-      local tempfile_name = tempfile.create(bufname, output, current.config)
+      local tempfile_content = output
+      if initial_tempfile_inline then
+        tempfile_content = util.get_lines(bufnr, 0, -1)
+      end
+      
+      local tempfile_name = tempfile.create(bufname, tempfile_content, current.config)
       log.debug(string.format("Formatting temporary file at %s", tempfile_name))
 
       if not current.config.no_append then
@@ -194,6 +207,19 @@ function M.start_task(configs, start_line, end_line, opts)
 
     if opts.lock then
       vim.api.nvim_buf_set_option(bufnr, "modifiable", true)
+    end
+    
+    if initial_tempfile_inline then
+      -- We need to prepare the range initially specified by the user for diff comparision with the original input
+      local adjust = vim.fn.line('$') - #output
+      -- Refrain from using the convenient unpack, since that will not fly when formatting large files
+      local tempfile_output = {}
+      local j = 1
+      for i = start_line + 1, end_line - adjust do
+        tempfile_output[j] = output[i]
+        j = j + 1
+      end
+      output = tempfile_output
     end
 
     if not util.is_same(input, output) then
